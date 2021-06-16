@@ -1,0 +1,3 @@
+PMEMPOOLSET
+OPTION SINGLEHDR
+64G /pmem/poolset/

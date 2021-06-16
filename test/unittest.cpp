@@ -12,15 +12,33 @@
 
 #include "index_impl.h"
 
-void remove_file(const string& path) {
-  if (file_exists(path)) {
-    remove(path.c_str());
+class TmpFile {
+ public:
+  TmpFile(const string& parent = "/run/tmp") {
+    path_ = parent + "/unittest-index-" + std::to_string(rand());
   }
-}
+
+  ~TmpFile() {
+    remove_file(path_);
+  }
+
+  string path() const {
+    return path_;
+  }
+
+  static void remove_file(const string& path) {
+    if (file_exists(path)) {
+      remove(path.c_str());
+    }
+  }
+
+ private:
+  string path_;
+};
 
 TEST(VectorIndex, AddItem) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
 
   int f = 40;
   VectorIndex index(path, f);
@@ -48,8 +66,8 @@ TEST(VectorIndex, AddItem) {
 }
 
 TEST(VectorIndex, BuildNoItem) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
 
   int f = 1;
   VectorIndex index(path, f);
@@ -58,8 +76,6 @@ TEST(VectorIndex, BuildNoItem) {
 }
 
 TEST(VectorIndex, Build) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
   int f = 40;
   std::vector<std::vector<float>> items;
   int max_n_items = 10;
@@ -68,6 +84,9 @@ TEST(VectorIndex, Build) {
   }
 
   for (int n_items = 1; n_items < max_n_items; n_items++) {
+    TmpFile tmp_file;
+    string path = tmp_file.path();
+
     VectorIndex index(path, f);
     for (int i = 0; i < n_items; i++) {
       index.add_item(i, items[i].data());
@@ -84,8 +103,9 @@ TEST(VectorIndex, Build) {
 
 // only one item
 TEST(VectorIndex, Search1Item) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
+
   int f = 40;
   VectorIndex index(path, f);
 
@@ -106,8 +126,9 @@ TEST(VectorIndex, Search1Item) {
 
 // only two item
 TEST(VectorIndex, Search2Item) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
+
   int f = 40;
   VectorIndex index(path, f);
 
@@ -133,10 +154,10 @@ TEST(VectorIndex, Search2Item) {
 
 
 TEST(VectorIndex, SearchExistingItem) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
-  int f = 40;
+  TmpFile tmp_file;
+  string path = tmp_file.path();
 
+  int f = 40;
   int n_items = 100;
   std::default_random_engine generator(114514);
   std::normal_distribution<float> distribution(0.0, 1.0);
@@ -162,8 +183,9 @@ TEST(VectorIndex, SearchExistingItem) {
 }
 
 TEST(VectorIndex, SearchSimilarItem) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
+
   int f = 40;
   int n_items = 100;
   std::default_random_engine generator(114514);
@@ -193,8 +215,9 @@ TEST(VectorIndex, SearchSimilarItem) {
 }
 
 TEST(VectorIndex, SearchNonExistingItem) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
+
   int f = 2;
   int n_items = 4;
   float items[n_items][f] = {
@@ -243,8 +266,9 @@ TEST(VectorIndex, SearchNonExistingItem) {
 }
 
 TEST(VectorIndex, MultiThreadSearch) {
-  string path = "/tmp/unittest-index.pool";
-  remove_file(path);
+  TmpFile tmp_file;
+  string path = tmp_file.path();
+
   int f = 40;
   int n_items = 100;
   std::default_random_engine generator(114514);

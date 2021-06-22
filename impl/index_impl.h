@@ -20,10 +20,12 @@ class VectorIndex : public VectorIndexInterface {
    * We create a tree like this q times.
    */
  public:
+  // 需要修改成持久内存的指针
   typedef Node* NodePtr;
   using VectorIndexInterface::f_;
   using VectorIndexInterface::path_;
 
+  // 需要修改成持久化结构
   struct Tree {
     std::vector<NodePtr> nodes;
     int n_items;
@@ -92,7 +94,7 @@ class VectorIndex : public VectorIndexInterface {
         node = nd->right;
       } else if (nd->right == -1) {
         node = nd->left;
-      } else if (margin < 0) {
+      } else if (margin <= 0) {
         node = nd->left;
       } else {
         node = nd->right;
@@ -121,6 +123,7 @@ class VectorIndex : public VectorIndexInterface {
   Distance dist_;
   Tree* tree_ = nullptr;
 
+  // 需要在持久内存上新建节点
   NodePtr get(const int i) {
     if (i < tree_->nodes.size()) {
       return tree_->nodes.at(i);

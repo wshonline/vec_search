@@ -82,7 +82,8 @@ void two_means(const vector<NodePtr>& nodes, int f, Random& random, float* p, fl
   }
 }
 
-// volatile tree Node definition
+// DRAM版本的节点定义
+// 选手需要修改成基于持久内存的定义
 struct VNode {
   int left = -1;
   int right = -1;
@@ -100,10 +101,7 @@ class Euclidean {
 
   bool side(const Node* xn, const float* y, int f) {
     float dot = margin(xn, y, f);
-    if (dot != 0)
-      return (dot > 0);
-    else
-      return (bool)random_.flip();
+    return (dot > 0);
   }
 
   static float distance(const float* x, const float* y, int f) {

@@ -1,6 +1,6 @@
 CXX = g++
 
-CXXFLAGS += -std=c++17 -O3 -fPIC -g -ffp-contract=off -march=native
+CXXFLAGS += -std=c++17 -O3 -fPIC -g -ffp-contract=off -march=native -fopenmp
 LINK_FLAGS = -lpmem -lpmemobj -pthread -Wl,-rpath,/usr/local/lib:/usr/local/lib64:/usr/lib:/usr/lib64
 
 IMPL_DIR = impl

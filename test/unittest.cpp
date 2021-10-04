@@ -17,6 +17,9 @@ class TmpFile {
   TmpFile(const string& parent = "/run/tmp") {
     path_ = parent + "/unittest-index-" + std::to_string(rand());
   }
+  // TmpFile(const string& parent = "") {
+  //   path_ = parent + "" + std::to_string(rand());
+  // }
 
   ~TmpFile() {
     remove_file(path_);

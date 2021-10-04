@@ -2,10 +2,10 @@
  * example DRAM implementation
  */
 
-/**
+/*
  *
  * 22层
- * xxh3
+ * xxhash64
  * bytell_hash_map + lock_guard
  * 
  */
@@ -18,19 +18,24 @@
 #include <mutex>
 #include <unistd.h>
 #include <queue>
-// #include <atomic>
+#include <atomic>
+
+/*************** hash include ***************/
+#include "xxh3.h"
+#include "xxhash64.h"
+#include "bytell_hash_map.h"
+/*************** hash include ***************/
 
 #include "index.h"
 #include "distance.h"
-#include "xxh3.h"
-#include "bytell_hash_map.h"
-// #include "xxhash64.h"
 
 #define POOLSIZE ((1024LL * 1024 * 1024 * 50))
-const uint32_t LEVEL = 22;
 const std::string LAYOUT = "";
-// uint64_t myseed = 1313;
+
+/******************************************************* xxhash *******************************************************/
+uint64_t myseed = 1313;
 XXH64_hash_t seed = 1313;
+/******************************************************* xxhash *******************************************************/
 
 // // 自旋锁的实现
 // class spin_lock {
@@ -64,10 +69,21 @@ class VectorIndex : public VectorIndexInterface {
 
   // 需要修改成持久化结构
   struct Tree {
+    // pmem::obj::vector<NodePtr> nodes;
+    // persistent_ptr<NodePtr[]> nodeptr_array_space;
     int n_items;  // 叶子? add item的值
     bool built;
     int root;
   };
+
+  // struct MemTree {
+  //   MemNodePtr* memnodeptr_array_space;
+  //   MemNode* memnode_array_space;
+  //   float* memfloat_array_space;
+  //   uint32_t memnode_cur_num;
+  //   int mem_tree_level_;
+  //   int memnode_root;
+  // };
 
   struct root {
     persistent_ptr<Tree> tree;
@@ -82,10 +98,9 @@ class VectorIndex : public VectorIndexInterface {
 
   VectorIndex(const string& path, int f) :
       VectorIndexInterface(path, f) {
-    // hashmap_new_ = new int[1 << 28];  // 1G
 
     // mem_tree_ = new MemTree();
-    mem_tree_level_ = LEVEL;
+    mem_tree_level_ = 22;
     uint32_t element_num = 1 << mem_tree_level_;
     std::cout << "mem_tree_level_ = " << mem_tree_level_ << std::endl;
     std::cout << "element_num = " << element_num << std::endl;
@@ -102,6 +117,7 @@ class VectorIndex : public VectorIndexInterface {
         transaction::run(pop, [&] {
           // 初始化时，开辟大块的pmem空间
           proot->tree = make_persistent<Tree>();
+          // proot->tree->nodeptr_array_space = make_persistent<NodePtr[]>(15LL * 1000 * 1000);
           proot->node_array_space = make_persistent<Node[]>(15LL * 1000 * 1000);
           proot->float_array_space = make_persistent<float[]>(15LL * 1000 * 1000 * f);
           node_array_start = proot->node_array_space.get();
@@ -143,6 +159,7 @@ class VectorIndex : public VectorIndexInterface {
         transaction::run(pop, [&] {
           // 初始化时，开辟大块的pmem空间
           proot->tree = make_persistent<Tree>();
+          // proot->tree->nodeptr_array_space = make_persistent<NodePtr[]>(15LL * 1000 * 1000);
           proot->node_array_space = make_persistent<Node[]>(15LL * 1000 * 1000);
           proot->float_array_space = make_persistent<float[]>(15LL * 1000 * 1000 * f);
           node_array_start = proot->node_array_space.get();
@@ -153,10 +170,12 @@ class VectorIndex : public VectorIndexInterface {
   }
 
   ~VectorIndex() {
+    // delete mem_tree_;
     pop.close();
   }
 
   bool add_item(int item, const float* w) override {
+    // std::cout << "add_item:" << item << std::endl;
     if (proot->tree->built) {
       log("You can't add an item to an already built index");
       return false;
@@ -199,6 +218,8 @@ class VectorIndex : public VectorIndexInterface {
     });
     // log("num of total nodes = %ld\n", n_nodes_);
 
+    // 建立内存索引
+    // 建立hash表
     if (proot->tree->built) {
       build_tree_index_in_memory();
       build_hash_in_memory();
@@ -218,7 +239,6 @@ class VectorIndex : public VectorIndexInterface {
       if (it == hash_map.end()) {
         hash_map.insert({result, i});
       }
-      // insert_hashmap(result, i);
     }
     std::cout << "build_hash_in_memory..." << std::endl;
   }
@@ -233,7 +253,6 @@ class VectorIndex : public VectorIndexInterface {
     Node* nd = get(node);
 
     uint32_t cur_loc = 0;
-
     MemNode* mem_nd = get_mem_node(cur_loc);
     node_offset_hash_map[node] = cur_loc;
     cur_loc++;
@@ -292,17 +311,13 @@ class VectorIndex : public VectorIndexInterface {
   int search_top1(const float* target) override {
     /*************** try search in hash ***************/
     // uint64_t result = XXHash64::hash(target, sizeof(float) * f_, myseed);
-    XXH64_hash_t result = XXH3_64bits_withSeed(target, sizeof(float) * f_, seed);
+    XXH64_hash_t result = XXH3_64bits_withSeed(target, 1024, seed);
     auto it = hash_map.find(result);
     if (it != hash_map.end()) {
       // go_hash++;  //
       return it->second;
     }
-    // int hash_value = get_hashmap(result);
-    // if (hash_value != 0) {
-    //   return hash_value;
-    // }
-
+    
     // go_tree++;  //
     /*************** mem tree index ***************/
     int node = memnode_root;
@@ -330,7 +345,6 @@ class VectorIndex : public VectorIndexInterface {
     if (currentLevel <= mem_tree_level_) {
       std::lock_guard<std::mutex> latch(mutex_);
       hash_map.insert({result, node});
-      // insert_hashmap(result, node);
       return node;
     }
 
@@ -355,7 +369,6 @@ class VectorIndex : public VectorIndexInterface {
     /**************************************** add to hash ****************************************/
     std::lock_guard<std::mutex> latch(mutex_);
     hash_map.insert({result, node});
-    // insert_hashmap(result, node);
     return node;
   }
 
@@ -397,14 +410,6 @@ class VectorIndex : public VectorIndexInterface {
 
   ska::bytell_hash_map<int, uint32_t> node_offset_hash_map;
   ska::bytell_hash_map<uint64_t, int> hash_map;
-  // int* hashmap_new_;
-  // inline void insert_hashmap(uint64_t hash_key, int hash_value) {
-  //   *(hashmap_new_ + (hash_key&((1<<28)-1))) = hash_value;
-  // }
-  // inline int get_hashmap(uint64_t hash_key) {
-  //   return *(hashmap_new_ + (hash_key&((1<<28)-1)));
-  // }
-
 
   std::mutex mutex_;  // 互斥锁
   // spin_lock splock;  // 自旋锁

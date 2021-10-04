@@ -106,7 +106,6 @@ struct VNode {
 struct MemNode {
   // int left_in_mem_array;
   // int right_in_mem_array;
-  int origin;
   int left = -1;
   int right = -1;
   float* v;

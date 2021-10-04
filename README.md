@@ -45,7 +45,7 @@ make
 ```bash
 # ./demo --help可以查看可选输入参数
 # 注意：评测程序输入的--path为poolset的配置文件，用户可以调用相同的pool::create接口来创建pmem pool，不过size需要设置成0
-./demo_pmem --path /pmem/vector.tree --nodes 1000 --test_count 100
+./demo --path pool.set --nodes 5000000 --test_count 12500 --random --random_prop 1
 Running demo with:
 num. features: 256
 num. nodes: 1000

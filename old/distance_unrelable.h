@@ -2,7 +2,6 @@
 
 #include <vector>
 #include <string>
-#include <immintrin.h>
 #include "random.h"
 
 #include <libpmemobj++/make_persistent.hpp>
@@ -26,7 +25,7 @@ using std::string;
 // no need to free afterwards
 #define alloc_stack(x) __builtin_alloca((x))
 
-inline float serial_dot(const float* x, const float* y, int f) {
+inline float dot(const float* x, const float* y, int f) {
   float s = 0;
   for (int z = 0; z < f; z++) {
     s += x[z] * y[z];
@@ -34,61 +33,6 @@ inline float serial_dot(const float* x, const float* y, int f) {
     // y++;
   }
   return s;
-}
-
-template<int offsetRegs>
-inline __m256 mul8( const float* p1, const float* p2 )
-{
-    constexpr int lanes = offsetRegs * 8  ;
-    const __m256 a = _mm256_loadu_ps( p1 + lanes );
-    const __m256 b = _mm256_loadu_ps( p2 + lanes );
-    return _mm256_mul_ps( a, b );
-}
-
-template<int offsetRegs>
-inline __m256 fma8( __m256 acc, const float* p1, const float* p2 )
-{
-    constexpr int lanes = offsetRegs * 8;
-    const __m256 a = _mm256_loadu_ps( p1 + lanes );
-    const __m256 b = _mm256_loadu_ps( p2 + lanes );
-    return _mm256_fmadd_ps( a, b, acc );
-}
-
-float dot(const float* x, const float* y, int f) {
-  // 当维度为32的倍数时，使用AVX2做并行计算
-  if (f % 32 != 0) {
-    return serial_dot(x, y, f);
-  }
-
-  const float* p1 = x;
-  const float* const p1End = p1 + f;
-  const float* p2 = y;
-
-  __m256 dot0 = mul8<0>( p1, p2 );
-  __m256 dot1 = mul8<1>( p1, p2 );
-  __m256 dot2 = mul8<2>( p1, p2 );
-  __m256 dot3 = mul8<3>( p1, p2 );
-  p1 += 8 * 4;
-  p2 += 8 * 4;
-
-  while( p1 < p1End )
-  {
-      dot0 = fma8<0>( dot0, p1, p2 );
-      dot1 = fma8<1>( dot1, p1, p2 );
-      dot2 = fma8<2>( dot2, p1, p2 );
-      dot3 = fma8<3>( dot3, p1, p2 );
-      p1 += 8 * 4;
-      p2 += 8 * 4;
-  }
-
-  const __m256 dot01 = _mm256_add_ps( dot0, dot1 );
-  const __m256 dot23 = _mm256_add_ps( dot2, dot3 );
-  const __m256 dot0123 = _mm256_add_ps( dot01, dot23 );
-
-  const __m128 r4 = _mm_add_ps( _mm256_castps256_ps128( dot0123 ), _mm256_extractf128_ps( dot0123, 1 ) );
-  const __m128 r2 = _mm_add_ps( r4, _mm_movehl_ps( r4, r4 ) );
-  const __m128 r1 = _mm_add_ss( r2, _mm_movehdup_ps( r2 ) );
-  return _mm_cvtss_f32( r1 );
 }
 
 float euclidean_distance(const float* x, const float* y, int f) {
@@ -160,7 +104,8 @@ struct VNode {
 };
 
 struct MemNode {
-  int origin;  // origin pmem_node id
+  // int left_in_mem_array;
+  // int right_in_mem_array;
   int left = -1;
   int right = -1;
   float* v;

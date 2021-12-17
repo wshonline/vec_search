@@ -10,6 +10,7 @@
  * 重排内存节点
  */
 // taskset -c 0-3 ./demo --path pool.set --nodes 5000000 --test_count 125000 --random --random_prop 1 --thread 8
+// hash 完整的256个float
 // 单线程QPS 6.7w左右
 // 在此基础上使用AVX2，单线程QPS 15w左右
 
@@ -26,8 +27,8 @@
 #include "index.h"
 #include "distance.h"
 #include "xxh3.h"
-#include "bytell_hash_map.h"
 // #include "xxhash64.h"
+#include "bytell_hash_map.h"
 
 #define POOLSIZE ((1024LL * 1024 * 1024 * 50))
 const uint32_t LEVEL = 22;
@@ -67,7 +68,7 @@ class VectorIndex : public VectorIndexInterface {
 
   // 需要修改成持久化结构
   struct Tree {
-    int n_items;  // 叶子? add item的值
+    int n_items;  // leaf num
     bool built;
     int root;
   };
@@ -85,18 +86,14 @@ class VectorIndex : public VectorIndexInterface {
 
   VectorIndex(const string& path, int f) :
       VectorIndexInterface(path, f) {
-    // hashmap_new_ = new int[1 << 28];  // 1G
 
-    // mem_tree_ = new MemTree();
     mem_tree_level_ = LEVEL;
     uint32_t element_num = 1 << mem_tree_level_;
     std::cout << "mem_tree_level_ = " << mem_tree_level_ << std::endl;
     std::cout << "element_num = " << element_num << std::endl;
-    // memnodeptr_array_space = new MemNodePtr[element_num];
     memnode_array_space = new MemNode[element_num];
     memfloat_array_space = new float[element_num * f_];
     
-    // std::cout << "sizeof(VNode)=" << sizeof(VNode) << std::endl;
     if (path.find("pool.set") != string::npos) {
       std::cout << "进入pool.set" << std::endl;
       try {
@@ -115,18 +112,16 @@ class VectorIndex : public VectorIndexInterface {
         proot = pop.root();
         node_array_start = proot->node_array_space.get();
         float_array_start = proot->float_array_space.get();
-        // 建立内存索引
-        // 建立hash表
         if (proot->tree->built) {
-          // node_cur_num = proot->tree->n_items;  // 让get函数通过内读取该数值
+          // node_cur_num = proot->tree->n_items;  // 让get函数通过内读取该数值 error
           node_cur_num = proot->node_total;  // 让get函数通过内读取该数值
-          // build_tree_index_in_memory();
+          // 建立内存索引
+          // 建立hash表
           build_tree_index_in_memory_and_relable_memnode();
           build_hash_in_memory();
         }
       }   
-    }
-    else {
+    } else {
       if (access(path.c_str(), F_OK) == 0) {
         std::cout << "进入else if" << std::endl;
         pop = pool<root>::open(path, LAYOUT);
@@ -134,14 +129,14 @@ class VectorIndex : public VectorIndexInterface {
         node_array_start = proot->node_array_space.get();
         float_array_start = proot->float_array_space.get();
         if (proot->tree->built) {
-          // node_cur_num = proot->tree->n_items;  // 让get函数通过内读取该数值
+          // node_cur_num = proot->tree->n_items;  // 让get函数通过内读取该数值 error
           node_cur_num = proot->node_total;  // 让get函数通过内读取该数值
-          // build_tree_index_in_memory();
+          // 建立内存索引
+          // 建立hash表
           build_tree_index_in_memory_and_relable_memnode();
           build_hash_in_memory();
         }
-      }
-      else {
+      } else {
         std::cout << "进入else else" << std::endl;
         pop = pool<root>::create(path, LAYOUT, POOLSIZE, S_IRWXU);
         proot = pop.root();
@@ -167,15 +162,15 @@ class VectorIndex : public VectorIndexInterface {
       return false;
     }
     // transaction::run(pop, [&] {
-    Node* n = get(item);
-    n->left = -1;
-    n->right = -1;
-    
-    for (int z = 0; z < f_; z++)
-      n->v[z] = *(w + z);
+      Node* n = get(item);
+      n->left = -1;
+      n->right = -1;
+      
+      for (int z = 0; z < f_; z++)
+        n->v[z] = *(w + z);
 
-    if (item >= proot->tree->n_items)
-      proot->tree->n_items = item + 1;
+      if (item >= proot->tree->n_items)
+        proot->tree->n_items = item + 1;
     // });
 
     return true;
@@ -205,7 +200,6 @@ class VectorIndex : public VectorIndexInterface {
     // log("num of total nodes = %ld\n", n_nodes_);
 
     if (proot->tree->built) {
-      // build_tree_index_in_memory();
       build_tree_index_in_memory_and_relable_memnode();
       build_hash_in_memory();
     }
@@ -224,93 +218,23 @@ class VectorIndex : public VectorIndexInterface {
       if (it == hashret_item_map.end()) {
         hashret_item_map.insert({result, i});
       }
-      // insert_hashmap(result, i);
     }
     std::cout << "build_hash_in_memory..." << std::endl;
   }
-
-  // int build_tree_index_in_memory() {
-  //   if (!proot->tree->built) {
-  //     return 0;
-  //   }
-
-  //   // mem_tree_->nodes.resize(1 << mem_tree_level_);
-  //   int node = proot->tree->root;
-  //   Node* nd = get(node);
-
-  //   uint32_t cur_loc = 0;
-
-  //   MemNode* mem_nd = get_mem_node(cur_loc);
-  //   node_offset_hash_map[node] = cur_loc;
-  //   cur_loc++;
-
-  //   memnode_root = node;
-  //   memcpy(mem_nd->v, nd->v.get(), sizeof(float) * f_);
-  //   mem_nd->left = nd->left;
-  //   mem_nd->right = nd->right;
-  //   mem_nd->alpha = nd->alpha;
-    
-  //   std::queue <MemNode*> q;
-  //   q.push(mem_nd);
-
-  //   int currentLevel = 1;
-  //   while (!q.empty() && currentLevel < mem_tree_level_) {
-  //     // std::cout << "currentLevel=" << currentLevel << ",mem_tree_level_=" << mem_tree_level_ << ",node_cur_num=" << node_cur_num << std::endl;
-  //     int currentLevelSize = q.size();
-  //     for (int i = 0; i < currentLevelSize; ++i) {
-  //       auto node = q.front();
-  //       q.pop();
-  //       // std::cout << "node->left=" << node->left << std::endl;
-  //       if (node->left != -1) {
-  //         nd = get(node->left);
-
-  //         mem_nd = get_mem_node(cur_loc);
-  //         node_offset_hash_map[node->left] = cur_loc;
-  //         cur_loc++;
-
-  //         memcpy(mem_nd->v, nd->v.get(), sizeof(float) * f_);
-  //         mem_nd->left = nd->left;
-  //         mem_nd->right = nd->right;
-  //         mem_nd->alpha = nd->alpha;
-  //         q.push(mem_nd);
-  //       }
-  //       // std::cout << "node->right="  << node->right << std::endl;
-  //       if (node->right != -1) {
-  //         nd = get(node->right);
-
-  //         mem_nd = get_mem_node(cur_loc);
-  //         node_offset_hash_map[node->right] = cur_loc;
-  //         cur_loc++;
-
-  //         memcpy(mem_nd->v, nd->v.get(), sizeof(float) * f_);
-  //         mem_nd->left = nd->left;
-  //         mem_nd->right = nd->right;
-  //         mem_nd->alpha = nd->alpha;
-  //         q.push(mem_nd);
-  //       }
-  //     }
-  //     currentLevel++;
-  //   }
-  //   std::cout << "build_tree_index_in_memory...level is " << currentLevel << std::endl;
-  //   return currentLevel;
-  // }
 
   int build_tree_index_in_memory_and_relable_memnode() {
     if (!proot->tree->built) {
       return 0;
     }
 
-    // mem_tree_->nodes.resize(1 << mem_tree_level_);
     int node = proot->tree->root;
     Node* nd = get(node);
 
     uint32_t cur_loc = 0;
-
     MemNode* mem_nd = get_mem_node(cur_loc);
-    // node_offset_hash_map[node] = cur_loc;
+    // node_arrayidx_hash_map[node] = cur_loc;
     cur_loc++;
 
-    // memnode_root = node;
     memnode_root = 0;
     memcpy(mem_nd->v, nd->v.get(), sizeof(float) * f_);
     mem_nd->origin = node;
@@ -323,18 +247,16 @@ class VectorIndex : public VectorIndexInterface {
 
     int currentLevel = 1;
     while (!q.empty() && currentLevel < mem_tree_level_) {
-      // std::cout << "currentLevel=" << currentLevel << ",mem_tree_level_=" << mem_tree_level_ << ",node_cur_num=" << node_cur_num << std::endl;
       int currentLevelSize = q.size();
       for (int i = 0; i < currentLevelSize; ++i) {
         auto node = q.front();
         q.pop();
-        // std::cout << "node->left=" << node->left << std::endl;
         if (node->left != -1) {
           nd = get(node->left);
 
           mem_nd = get_mem_node(cur_loc);
-          // node_offset_hash_map[node->left] = cur_loc;
-          mem_nd->origin = node->left;
+          // node_arrayidx_hash_map[node->left] = cur_loc;
+          mem_nd->origin = node->left;  // save origin pmem_node id
           node->left = cur_loc;
           cur_loc++;
 
@@ -344,13 +266,12 @@ class VectorIndex : public VectorIndexInterface {
           mem_nd->alpha = nd->alpha;
           q.push(mem_nd);
         }
-        // std::cout << "node->right="  << node->right << std::endl;
         if (node->right != -1) {
           nd = get(node->right);
 
           mem_nd = get_mem_node(cur_loc);
-          // node_offset_hash_map[node->right] = cur_loc;
-          mem_nd->origin = node->right;
+          // node_arrayidx_hash_map[node->right] = cur_loc;
+          mem_nd->origin = node->right;  // save origin pmem_node id
           node->right = cur_loc;
           cur_loc++;
 
@@ -368,27 +289,23 @@ class VectorIndex : public VectorIndexInterface {
   }
 
   int search_top1(const float* target) override {
-    /*************** try search in hash ***************/
+    /*************** search in hash ***************/
     // uint64_t result = XXHash64::hash(target, sizeof(float) * f_, myseed);
     XXH64_hash_t result = XXH3_64bits_withSeed(target, sizeof(float) * f_, seed);
     auto it = hashret_item_map.find(result);
     if (it != hashret_item_map.end()) {
-      // go_hash++;  //
+      // go_hash++;
       return it->second;
     }
-    // int hash_value = get_hashmap(result);
-    // if (hash_value != 0) {
-    //   return hash_value;
-    // }
 
-    // go_tree++;  //
-    /*************** mem tree index ***************/
+    /********* search in mem tree index *********/
+    // go_tree++;
     int node = memnode_root;
-    // MemNode* mem_nd = get_mem_node(node_offset_hash_map[node]);
-    // MemNode* mem_nd = memnode_array_space + node_offset_hash_map[node];
+    // MemNode* mem_nd = get_mem_node(node);
     MemNode* mem_nd = memnode_array_space;
     int currentLevel = 1;
     float margin;
+
     while (mem_nd->left != -1) {
       margin = dist_.margin_mem(mem_nd, target, f_);
       if (margin <= 0) {
@@ -397,26 +314,21 @@ class VectorIndex : public VectorIndexInterface {
         node = mem_nd->right;
       }
       ++currentLevel;
-      // mem_node现在所在层为currentLevel++
       if (currentLevel > mem_tree_level_) {
         break;
       }
-      // mem_nd = get_mem_node(node_offset_hash_map[node]);
-      // mem_nd = memnode_array_space + node_offset_hash_map[node];
+      // mem_nd = get_mem_node(node);
       mem_nd = memnode_array_space + node;
     }
 
-    // 如果是target在内存索引树中，加入hash
+    /*** 如果是target在内存索引树中，加入hash ***/
     if (currentLevel <= mem_tree_level_) {
-      std::lock_guard<std::mutex> latch(mutex_);
-      // hashret_item_map.insert({result, node});
+      std::lock_guard<std::mutex> latch(mutex_[0]);
       hashret_item_map.insert({result, mem_nd->origin});
-      // insert_hashmap(result, node);
-      // return node;
       return mem_nd->origin;
     }
 
-    /*************** pmem tree index ***************/
+    /******* search in pmem tree index *******/
     // Node* nd = get(node);
     Node* nd = node_array_start + node;
     while (nd->left != -1) {
@@ -434,10 +346,9 @@ class VectorIndex : public VectorIndexInterface {
       nd = node_array_start + node;
     }
 
-    /**************************************** add to hash ****************************************/
-    std::lock_guard<std::mutex> latch(mutex_);
+    /************** add to hash **************/
+    std::lock_guard<std::mutex> latch(mutex_[1]);
     hashret_item_map.insert({result, node});
-    // insert_hashmap(result, node);
     return node;
   }
 
@@ -454,13 +365,11 @@ class VectorIndex : public VectorIndexInterface {
     return proot->tree->built;
   }
   
-  /************************* hash_hit helper func *************************/
   void print_hit_status() {
     std::cout << "Hit count: " << hit_count << std::endl;
     std::cout << "Miss count: " << miss_count << std::endl;
     std::cout << "Hit prop: " << hit_count / float(hit_count + miss_count) << std::endl;
   }
-  /************************* hash hit helper func *************************/
 
  private:
   int n_nodes_ = 0;
@@ -468,56 +377,37 @@ class VectorIndex : public VectorIndexInterface {
   pmem::obj::persistent_ptr<VectorIndex::root> proot;
   uint32_t node_cur_num = 0;
 
-  // MemTree* mem_tree_ = nullptr;
-  // 以下的内容本应用struct MemTree {}去管理，但为了省去指针取值操作 
-  // MemNodePtr* memnodeptr_array_space;
+  // MemTree
   MemNode* memnode_array_space;
   float* memfloat_array_space;
   uint32_t memnode_cur_num = 0;
   int mem_tree_level_ = 0;
   int memnode_root = 0;
 
-  // ska::bytell_hash_map<int, uint32_t> node_offset_hash_map;
+  // ska::bytell_hash_map<int, uint32_t> node_arrayidx_hash_map;  // relable后, 就不需要查表, node可以直接作为array idx
   ska::bytell_hash_map<uint64_t, int> hashret_item_map;
-  // int* hashmap_new_;
-  // inline void insert_hashmap(uint64_t hash_key, int hash_value) {
-  //   *(hashmap_new_ + (hash_key&((1<<28)-1))) = hash_value;
-  // }
-  // inline int get_hashmap(uint64_t hash_key) {
-  //   return *(hashmap_new_ + (hash_key&((1<<28)-1)));
-  // }
 
+  std::mutex mutex_[2];  // 互斥锁
+  // spin_lock splock[2];  // 自旋锁
 
-  std::mutex mutex_;  // 互斥锁
-  // spin_lock splock;  // 自旋锁
+  // debug
   int hit_count = 0;
   int miss_count = 0;
-
-public:
   int go_tree = 0;
   int go_hash = 0;
 
+public:
   // 需要在持久内存上新建节点
   Node* get(const int i) {
-    // if (i < proot->tree->nodes.size()) {
-    //   return proot->tree->nodes.at(i);
-    // }
     if (i < node_cur_num) {
       return node_array_start + i;
     }
     else {
-      // transaction::run(pop, [&] {
-        // proot->node = make_persistent<Node>();
-        // proot->node->v = make_persistent<float[]>(f_);
-        // proot->tree->nodes.emplace_back(proot->node);
-
-        Node* node = node_array_start + node_cur_num;
-        node->v = float_array_start + (uint32_t)node_cur_num * f_;  // ... error这里!
-        // proot->tree->nodeptr_array_space[node_cur_num] = node;
-        // proot->tree->n_items++;  // 必要性?
-        proot->node_total++;
-        node_cur_num++;
-      // });
+      Node* node = node_array_start + node_cur_num;
+      node->v = float_array_start + (uint32_t)node_cur_num * f_;  // 注意 boundary error
+      // proot->tree->n_items++;  // no need, n_item is leaf num.
+      proot->node_total++;
+      node_cur_num++;
       return node;
     }
   }
@@ -527,31 +417,22 @@ public:
   }
 
   MemNode* get_mem_node(const int i) {
-    // if (i < mem_tree_->nodes.size()) {
-    //   return mem_tree_->nodes.at(i);
-    // }
     if (i < memnode_cur_num) {
       return memnode_array_space + i;
     }
     else {
-      // auto n = new MemNode();
-      // n->v = new float[f_];
-      // mem_tree_->nodes.emplace_back(n);
       MemNode* n = memnode_array_space + memnode_cur_num;
       n->v = memfloat_array_space + memnode_cur_num * f_;
-      // memnodeptr_array_space[memnode_cur_num] = n;
       memnode_cur_num++;
       return n;
     }
   }
 
   MemNode* get_mem_node(const int i) const {
-    // return memnodeptr_array_space[i];
     return memnode_array_space + i;
   }
 
   int make_tree(const std::vector<int >& indices) {
-    // std::cout << "make tree..." << std::endl;
     if (indices.size() == 1)
       return indices[0];
 
@@ -565,7 +446,6 @@ public:
 
     std::vector<int> children_indices[2];
     VNode m;
-    // NodePtr m = make_persistent<float[]>(f_);  // ... ...
     m.v = make_persistent<float[]>(f_);  // should free
     dist_.create_hyperplane(children, f_, &m);
     
